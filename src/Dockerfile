@@ -12,8 +12,6 @@ COPY --from=build-env /app/out ./
 RUN useradd -ms /bin/bash moduleuser
 USER moduleuser
 
-# LABEL org.opencontainers.image.source=https://github.com/Project-GAUDI/CSVFileReceiver
 LABEL org.opencontainers.image.description="CSVFileReceiver is an Azure IoT edge module that monitors CSV files and sends records of detected CSV files."
-# LABEL org.opencontainers.image.licenses=MIT
 
 ENTRYPOINT ["dotnet", "CSVFileReceiver.dll"]
