@@ -51,7 +51,7 @@ docker image build -t <IMAGE_NAME> ./CSVFileReceiver/src/
 ```
 例）
 ```
-docker image build -t ghcr.io/<GITHUB_USERNAME>/csvfilereceiver:<VERSION> ./CSVFileReceiver/src/
+docker image build -t ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION> ./CSVFileReceiver/src/
 ```
 
 5. Dockerイメージをプライベートコンテナレジストリにプッシュ
@@ -60,7 +60,7 @@ docker push <IMAGE_NAME>
 ```
 例）
 ```
-docker push ghcr.io/<GITHUB_USERNAME>/csvfilereceiver:<VERSION>
+docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 ```
 
 6. Azure IoT edgeで利用
