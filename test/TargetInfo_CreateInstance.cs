@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
-namespace CSVFileReceiver.Test
+namespace IotedgeV2CSVFileReceiver.Test
 {
     public class TargetInfo_CreateInstance
     {

@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using TICO.GAUDI.Commons;
 
-namespace CSVFileReceiver
+namespace IotedgeV2CSVFileReceiver
 {
     public enum GetFrom
     {
@@ -14,28 +15,38 @@ namespace CSVFileReceiver
     {
         public static string ToString(this GetFrom self)
         {
+            string result = null;
             switch (self)
             {
                 case GetFrom.Message:
-                    return "message";
+                    result = "message";
+                    break;
                 case GetFrom.File:
-                    return "file";
+                    result = "file";
+                    break;
                 default:
-                    throw new ArgumentException($"Unexpected value {self}");
+                    var errmsg = $"Unexpected value {self}";
+                    throw new ArgumentException(errmsg);
             }
+            return result;
         }
 
         public static GetFrom ToGetFrom(this string self)
         {
+            GetFrom result;
             switch (self.ToLower())
             {
                 case "message":
-                    return GetFrom.Message;
+                    result = GetFrom.Message;
+                    break;
                 case "file":
-                    return GetFrom.File;
+                    result = GetFrom.File;
+                    break;
                 default:
-                    throw new ArgumentException($"Unexpected value {self}");
+                    var errmsg = $"Unexpected value {self}";
+                    throw new ArgumentException(errmsg);
             }
+            return result;
         }
 
     }

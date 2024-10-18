@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace CSVFileReceiver
+namespace IotedgeV2CSVFileReceiver
 {
     class FileDtectedEventArgs : EventArgs
     {

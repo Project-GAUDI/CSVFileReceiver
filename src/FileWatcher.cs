@@ -4,17 +4,19 @@ using System.IO;
 using System.Threading.Tasks;
 using TICO.GAUDI.Commons;
 
-namespace CSVFileReceiver
+namespace IotedgeV2CSVFileReceiver
 {
     class FileWatcher : IDisposable
     {
         public event AsyncEventHandler<FileDtectedEventArgs> OnFileDetected;
 
-        private Logger MyLogger { get; }
+        private ILogger MyLogger { get; }
 
         private FileSystemWatcher MyWatcher { get; set; }
 
         private string InputPath { get; }
+
+        static bool IncludeSubFolder { get; set; } = false;
 
         private string SortKey { get; }
 
@@ -30,17 +32,18 @@ namespace CSVFileReceiver
 
         private object SearchLockObject = new object();
 
-        public FileWatcher(string inputPath, string sortKey, string sortOrder)
+        public FileWatcher(string inputPath, bool includeSubFolder, string sortKey, string sortOrder)
         {
-            MyLogger = Logger.GetLogger(this.GetType());
+            MyLogger = LoggerFactory.GetLogger(this.GetType());
             InputPath = inputPath;
+            IncludeSubFolder = includeSubFolder;
             SortKey = sortKey;
             SortOrder = sortOrder;
         }
 
         public void Start()
         {
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Start Method: {System.Reflection.MethodBase.GetCurrentMethod().Name}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: Start");
 
             this.IsSearching = false;
             this.IsSearchWaiting = false;
@@ -51,12 +54,12 @@ namespace CSVFileReceiver
             {
                 try
                 {
-                    await SearchInputFileAsync();
+                    await SearchInputFileCoreAsync();
                 }
-                catch (Exception exp)
+                catch (Exception ex)
                 {
                     // 非同期処理内部で発生したエラーはログを出力して握りつぶす
-                    MyLogger.WriteLog(Logger.LogLevel.ERROR, $"SearchInputFileAsync is failed. Exception:{exp}", true);
+                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"SearchInputFileCoreAsync is failed. Exception:{ex}", true);
                 }
             });
 
@@ -65,13 +68,14 @@ namespace CSVFileReceiver
             MyWatcher.Created += MyWatcher_Created;
             MyWatcher.Renamed += MyWatcher_Created;
             MyWatcher.EnableRaisingEvents = true;
+            MyWatcher.IncludeSubdirectories = IncludeSubFolder;
 
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"End Method: {System.Reflection.MethodBase.GetCurrentMethod().Name}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: Start");
         }
 
         public void Dispose()
         {
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Start Method: {System.Reflection.MethodBase.GetCurrentMethod().Name}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: Dispose");
 
             if (MyWatcher != null)
             {
@@ -81,12 +85,12 @@ namespace CSVFileReceiver
                 MyWatcher.Dispose();
             }
 
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"End Method: {System.Reflection.MethodBase.GetCurrentMethod().Name}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: Dispose");
         }
 
         public async Task Stop()
         {
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Start Method: Stop");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: Stop");
 
             this.IsStarting = false;
 
@@ -102,14 +106,14 @@ namespace CSVFileReceiver
                 await Task.Delay(1000);
             }
 
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"End Method: Stop");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: Stop");
         }
 
         public delegate Task AsyncEventHandler<FileDtectedEventArgs>(object sender, FileDtectedEventArgs e);
 
         private void MyWatcher_Created(object sender, FileSystemEventArgs e)
         {
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Start Method: {System.Reflection.MethodBase.GetCurrentMethod().Name}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: MyWatcher_Created");
 
             Task.Run(async () =>
             {
@@ -117,14 +121,14 @@ namespace CSVFileReceiver
                 {
                     await SearchInputFileAsync();
                 }
-                catch (Exception exp)
+                catch (Exception ex)
                 {
                     // 非同期処理内部で発生したエラーはログを出力して握りつぶす
-                    MyLogger.WriteLog(Logger.LogLevel.ERROR, $"MyWatcher_Created event is failed. Exception:{exp}", true);
+                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"MyWatcher_Created event is failed. Exception:{ex}", true);
                 }
             });
 
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"End Method: {System.Reflection.MethodBase.GetCurrentMethod().Name}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: MyWatcher_Created");
         }
 
         private int Compare(FileInfo a, FileInfo b)
@@ -156,14 +160,43 @@ namespace CSVFileReceiver
 
         private async Task SearchInputFileAsync()
         {
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Start Method: SearchInputFileAsync");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: SearchInputFileAsync");
+
+            IApplicationEngine appEngine = ApplicationEngineFactory.GetEngine();
+            if (ApplicationStateChangeResult.Success == await appEngine.SetApplicationRunningAsync())
+            {
+                await SearchInputFileCoreAsync();
+                if (ApplicationStateChangeResult.Success != await appEngine.UnsetApplicationRunningAsync())
+                {
+                    var errmsg = $"UnsetApplicationRunningAsync is not 'Success'.";
+                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
+                    MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SearchInputFileAsync caused by {errmsg}");
+                    return;
+                }
+            }
+            else
+            {
+                var errmsg = $"SetApplicationRunningAsync is not 'Success'.";
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
+                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SearchInputFileAsync caused by {errmsg}");
+                return;
+            }
+
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: SearchInputFileAsync");
+        }
+
+        private async Task  SearchInputFileCoreAsync()
+        {
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: SearchInputFileCoreAsync");
 
             // 他のプロセスが実行中であれば待機する（待機しているプロセスが既にいる場合は終了）
             while (true)
             {
-                if (!this.IsStarting)
+                bool isFileWatcherRunning = IsRunning();
+                if (!isFileWatcherRunning)
                 {
-                    MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Exit Method: SearchInputFileAsync caused by IsStarting = {IsStarting}.");
+                    var exitmsg = $"isFileWatcherRunning = {isFileWatcherRunning}.";
+                    MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SearchInputFileCoreAsync caused by {exitmsg}");
                     return;
                 }
 
@@ -180,7 +213,8 @@ namespace CSVFileReceiver
                     }
                     else
                     {
-                        MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Exit Method: SearchInputFileAsync caused by IsSearchWaiting = {IsSearchWaiting}.");
+                        var exitmsg = $"IsSearchWaiting = {IsSearchWaiting}.";
+                        MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SearchInputFileCoreAsync caused by {exitmsg}");
                         return;
                     }
                 }
@@ -193,13 +227,20 @@ namespace CSVFileReceiver
 
             try
             {
+
                 // 入力フォルダのファイル一覧情報を取得
                 DirectoryInfo inputDir = new DirectoryInfo(InputPath);
-                FileInfo[] inputFiles = inputDir.GetFiles();
-
+                SearchOption searchOpt = SearchOption.TopDirectoryOnly;
+                if (IncludeSubFolder)
+                {
+                    searchOpt= SearchOption.AllDirectories;
+                }
+                FileInfo[] inputFiles = inputDir.GetFiles("*", searchOpt);
+                
                 if (inputFiles == null || inputFiles.Length <= 0)
                 {
-                    MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Exit Method: SearchInputFileAsync caused by no input files.");
+                    var exitmsg = $"no input files.";
+                    MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SearchInputFileCoreAsync caused by {exitmsg}");
                     return;
                 }
 
@@ -207,9 +248,11 @@ namespace CSVFileReceiver
                 Array.Sort<FileInfo>(inputFiles, Compare);
                 foreach (var inputFile in inputFiles)
                 {
-                    if (!this.IsStarting)
+                    bool isFileWatcherRunning = IsRunning();
+                    if (!isFileWatcherRunning)
                     {
-                        MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Exit Method: SearchInputFileAsync caused by IsStarting = {IsStarting}.");
+                        var exitmsg = $"isFileWatcherRunning = {isFileWatcherRunning}.";
+                        MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SearchInputFileCoreAsync caused by {exitmsg}");
                         return;
                     }
                     // ファイル読込処理を起動
@@ -224,16 +267,17 @@ namespace CSVFileReceiver
                 }
             }
 
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"End Method: SearchInputFileAsync");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: SearchInputFileCoreAsync");
         }
 
         private async Task ExecuteLoadFileAsync(FileInfo inputFile)
         {
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Start Method: ExecuteLoadFileAsync");
-
-            if (!this.IsStarting)
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: ExecuteLoadFileAsync");
+            bool isFileWatcherRunning = IsRunning();
+            if (!isFileWatcherRunning)
             {
-                MyLogger.WriteLog(Logger.LogLevel.TRACE, $"Exit Method: ExecuteLoadFileAsync caused by IsStarting = {IsStarting}.");
+                var exitmsg = $"isFileWatcherRunning = {isFileWatcherRunning}.";
+                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: ExecuteLoadFileAsync caused by {exitmsg}");
                 return;
             }
             var inputfile_fullname = inputFile.FullName;
@@ -258,12 +302,12 @@ namespace CSVFileReceiver
                 {
                     try
                     {
-                        MyLogger.WriteLog(Logger.LogLevel.INFO, $"File \"{inputFile.Name}\" detected.");
+                        MyLogger.WriteLog(ILogger.LogLevel.INFO, $"File \"{inputFile.Name}\" detected.");
                         await OnFileDetected(this, new FileDtectedEventArgs(inputFile));
                     }
                     catch (Exception ex)
                     {
-                        MyLogger.WriteLog(Logger.LogLevel.ERROR, $"OnFileDetected event is failed. Exception:{ex}", true);
+                        MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"OnFileDetected event is failed. Exception:{ex}", true);
                     }
                 }
             }
@@ -275,8 +319,22 @@ namespace CSVFileReceiver
                 }
             }
 
-            MyLogger.WriteLog(Logger.LogLevel.TRACE, $"End Method: ExecuteLoadFileAsync");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: ExecuteLoadFileAsync");
         }
-
+        
+        /// <summary>
+        /// スケジューラーが動作中かつ終了処理中でないかチェック
+        /// </summary>
+        internal bool IsRunning()
+        {
+            IApplicationEngine appEngine = ApplicationEngineFactory.GetEngine();
+            bool IsTerminating = appEngine.IsTerminating();
+            bool ret = IsStarting && !IsTerminating;
+            if (!ret)
+            {
+                MyLogger.WriteLog(ILogger.LogLevel.DEBUG, $"IsRunning result = {ret}, IsStarting = {IsStarting} ,IsTerminating = {IsTerminating}.");
+            }
+            return ret;
+        }
     }
 }
