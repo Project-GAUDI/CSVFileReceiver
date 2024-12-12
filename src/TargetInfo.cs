@@ -5,7 +5,7 @@ using System.Linq;
 using TICO.GAUDI.Commons;
 using YamlDotNet.Serialization;
 
-namespace CSVFileReceiver
+namespace IotedgeV2CSVFileReceiver
 {
     public class TargetInfo
     {
@@ -38,10 +38,12 @@ namespace CSVFileReceiver
         public long SendMaximumRecords { get; private set; }
         public long RecordDataNum { get; private set; }
         public bool FilenamePropertiesEnabled { get; private set; }
+        static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(TargetInfo));
         private TargetInfo() { }
 
-        public static TargetInfo CreateInstance(JObject jobj, bool backupEnabled, Logger logger = null)
+        public static TargetInfo CreateInstance(JObject jobj, bool backupEnabled, ILogger logger = null)
         {
+            _logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: CreateInstance");
             var ret = new TargetInfo();
             ret.FileType = Util.GetRequiredValue<string>(jobj, "file_type").ToFileType();
             ret.OutputName = Util.GetRequiredValue<string>(jobj, "output_name");
@@ -63,17 +65,23 @@ namespace CSVFileReceiver
             // Standard:AAA:PDをサポートする
             if (!ret.FileType.IsExists())
             {
-                throw new Exception($"{ret.FileType} is not supported.");
+                var errmsg = $"{ret.FileType} is not supported.";
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                throw new Exception(errmsg);
             }
 
             if (ret.DataStartLine < 1)
             {
-                throw new Exception($"data_start_line can't set {ret.DataStartLine}");
+                var errmsg = $"data_start_line can't set {ret.DataStartLine}";
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                throw new Exception(errmsg);
             }
 
             if(!backupEnabled && ret.AfterProcess == AfterProcess.Move)
             {
-                throw new Exception($"after_process can't set {ret.AfterProcess} when BackupPath is not set.");
+                var errmsg = $"after_process can't set {ret.AfterProcess} when BackupPath is not set.";
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                throw new Exception(errmsg);
             }
 
             ret.DataProperties = new List<DataProperty>();
@@ -93,7 +101,9 @@ namespace CSVFileReceiver
                     
                     if (col < 1)
                     {
-                        throw new Exception($"column can't set {col}");
+                        var errmsg = $"column can't set {col}";
+                        _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                        throw new Exception(errmsg);
                     }
                     ret.DataProperties.Add(new DataProperty(name, col , get_from));
                 }
@@ -105,11 +115,15 @@ namespace CSVFileReceiver
                 ret.HeaderEndLine = Util.GetRequiredValue<int>(jobj, "header_end_line");
                 if(ret.DataStartLine <= ret.HeaderEndLine)
                 {
-                    throw new Exception($"header_end_line can't set {ret.HeaderEndLine} greater than or equal data_start_line {ret.DataStartLine}.");
+                    var errmsg = $"header_end_line can't set {ret.HeaderEndLine} greater than or equal data_start_line {ret.DataStartLine}.";
+                    _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                    throw new Exception(errmsg);
                 }
                 if(ret.HeaderEndLine < ret.HeaderStartLine)
                 {
-                    throw new Exception($"header_start_line can't set {ret.HeaderStartLine} greater than header_end_line {ret.HeaderEndLine}.");
+                    var errmsg = $"header_start_line can't set {ret.HeaderStartLine} greater than header_end_line {ret.HeaderEndLine}.";
+                    _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                    throw new Exception(errmsg);
                 }
             }
 
@@ -196,13 +210,14 @@ namespace CSVFileReceiver
                 var val = (JObject)token;
                 ret.DataEditOptions.Add(DataEditOption.CreateInstance(val));
             }
-            
+            _logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: CreateInstance");
             return ret;
         }
 
-        public void OutputSettingValues(Logger logger, int no = 0)
+        public void OutputSettingValues(ILogger logger, int no = 0)
         {
-            if (no > 0) logger.WriteLog(Logger.LogLevel.INFO, $"TargetInfo{no}");
+            _logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: OutputSettingValues");
+            if (no > 0) logger.WriteLog(ILogger.LogLevel.INFO, $"TargetInfo{no}");
 
             try
             {
@@ -210,14 +225,16 @@ namespace CSVFileReceiver
                 List<string> outList = serialized.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).ToList<string>();
                 foreach (string output in outList)
                 {
-                    logger.WriteLog(Logger.LogLevel.INFO, $"  {output}");
+                    logger.WriteLog(ILogger.LogLevel.INFO, $"  {output}");
                 }
             }
             catch
             {
-                throw new Exception("Failed to OutputSettingValues.");
+                var errmsg = $"Failed to OutputSettingValues.";
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: OutputSettingValues caused by {errmsg}");
+                throw new Exception(errmsg);
             }  
-
+            _logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: OutputSettingValues");
         }
     }
 }

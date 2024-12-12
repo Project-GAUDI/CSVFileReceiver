@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using TICO.GAUDI.Commons;
 
-namespace CSVFileReceiver
+namespace IotedgeV2CSVFileReceiver
 {
     public enum AfterProcess
     {
@@ -14,29 +15,39 @@ namespace CSVFileReceiver
     {
         public static string ToString(this AfterProcess self)
         {
+            string result = null;
             switch (self)
             {
                 case AfterProcess.Move:
-                    return "move";
+                    result = "move";
+                    break;
                 case AfterProcess.Delete:
-                    return "delete";
+                    result = "delete";
+                    break;
                 default:
-                    throw new ArgumentException($"Unexpected value {self}");
+                    var errmsg = $"Unexpected value {self}";
+                    throw new ArgumentException(errmsg);
             }
+            return result;
+            
         }
 
         public static AfterProcess ToAfterProcess(this string self)
         {
+            AfterProcess result;
             switch (self.ToLower())
             {
                 case "move":
-                    return AfterProcess.Move;
+                    result = AfterProcess.Move;
+                    break;
                 case "delete":
-                    return AfterProcess.Delete;
+                    result = AfterProcess.Delete;
+                    break;
                 default:
-                    throw new ArgumentException($"Unexpected value {self}");
+                    var errmsg = $"Unexpected value {self}";
+                    throw new ArgumentException(errmsg);
             }
+            return result;
         }
-
     }
 }

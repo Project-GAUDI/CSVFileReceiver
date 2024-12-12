@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\CSVFileReceiver.csproj" />
+    <PackageReference Include="TICO.GAUDI.Commons.Test" Version="6.0.4" />
   </ItemGroup>
 
 </Project>

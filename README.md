@@ -10,11 +10,14 @@
   * [環境変数](#環境変数)
   * [Desired Properties](#desired-properties)
   * [Create Option](#create-option)
+  * [startupOrder](#startuporder)
 * [受信メッセージ](#受信メッセージ)
 * [送信メッセージ](#送信メッセージ)
   * [Message Body](#message-body)
   * [Message Properties](#message-properties)
 * [Direct Method](#direct-method)
+  * [SetLogLevel](#setloglevel)
+  * [GetLogLevel](#getloglevel)
 * [ログ出力内容](#ログ出力内容)
 * [ユースケース](#ユースケース)
   * [ケース ①](#Usecase1)
@@ -74,8 +77,7 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 | Module Version | IoTEdge | edgeAgent | edgeHub  | amd64 verified on | arm64v8 verified on | arm32v7 verified on |
 | -------------- | ------- | --------- | -------- | ----------------- | ------------------- | ------------------- |
-| 4.1.1          | 1.4.27  | 1.4.27    | 1.4.27   | ubuntu20.04       | －                  | －                  |
-
+| 6.0.0          | 1.5.0   | 1.5.6     | 1.5.6    | ubuntu22.04       | －                  | －                  |
 
 ## Deployment 設定値
 
@@ -83,64 +85,65 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 #### 環境変数の値
 
-| Key               | Required | Default       | Description                                                                                                                                                                                                           |
-| ----------------- | -------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TransportProtocol |          | Amqp          | ModuleClientの接続プロトコル。<br>["Amqp", "Mqtt"]                                                                                                                                                    |
-| LogLevel          |          | info          | 出力ログレベル。<br>各ログレベルでの出力内容については[ログ出力内容](#ログ出力内容)を参照<br>["trace", "debug", "info", "warn", "error"]                                                                                                                                   |
-| InputPath         | 〇       |               | 監視するフォルダパス。                                                                                                                                                                                                  |
-| BackupPath        | 〇       |               | 読み込みに成功したファイルの移動先ファイルパス。<br>info[x].after_processがMoveのインプットのみ有効<br>info[x].after_processにMoveが指定されているものが1つでもあり、この変数が指定されていない場合は監視が開始されない |
-| ErrorPath         | 〇       |               | 読み込みに失敗したファイルの移動先ファイルパス。                                                                                                                                                                        |
-| MaximumRetryCount |          | 5             | 作成されたファイルへの最大アクセスリトライ回数。<br>1以上の値を設定。                                                                                                                                               |
-| RetryInterval     |          | 5000          | ファイルアクセス失敗時のアクセスインターバル(ミリ秒)。                                                                                                                                          |
-| SortKey           |          | Name          | ファイルの読込順序キー。<br>["Name"（ファイル名）, "Date"（更新日時）]                                                                                                                            |
-| SortOrder         |          | Asc           | ファイルの読込順序。<br>["Asc"（昇順）, "Desc"（降順）]                                                                                                                                            |
-| WaitTime          |          | 0             | メッセージ送信後待機時間(ミリ秒)。                                                                                                                                            |
-| DefaultSendTopic  |          | IoTHub        | 送信時のトピック形式。<br>["IoTHub", "Mqtt"]                                                                                                                                                        |
-| M2MqttFlag        |          | false         | 通信に利用するAPIの切り替えフラグ。<br>false ： IoTHubトピックのみ利用可能。<br>true ： IoTHubトピックとMqttトピックが利用可能。ただし、SasTokenの発行と設定が必要。 |
-| SasToken          | △       |               | M2MqttFlag=true時必須。edgeHubと接続する際に必要なモジュール毎の署名。 |
+| Key                       | Required | Default | Recommend | Description                                                     |
+| ------------------------- | -------- | ------- | --------- | ---------------------------------------------------------------- |
+| TransportProtocol         |          | Amqp    |           | ModuleClient の接続プロトコル。<br>["Amqp", "Mqtt"] |
+| LogLevel                  |          | info    |           | 出力ログレベル。<br>["trace", "debug", "info", "warn", "error"] |
+| InputPath                 | 〇       |         |           | 監視するフォルダパス。                                                                                                                                                                                                  |
+| BackupPath                | 〇       |         |           | 読み込みに成功したファイルの移動先ファイルパス。<br>info[x].after_processがMoveのインプットのみ有効<br>info[x].after_processにMoveが指定されているものが1つでもあり、この変数が指定されていない場合は監視が開始されない |
+| ErrorPath                 | 〇       |         |           | 読み込みに失敗したファイルの移動先ファイルパス。                                                                                                                                                                        |
+| MaximumRetryCount         |          | 5       |           | 作成されたファイルへの最大アクセスリトライ回数。<br>1以上の値を設定。                                                                                                                                               |
+| RetryInterval             |          | 5000    |           | ファイルアクセス失敗時のアクセスインターバル(ミリ秒)。                                                                                                                                          |
+| IncludeSubFolder          |          | false   |           | 監視するフォルダ配下のサブフォルダを監視対象に含めるかどうかのフラグ。<br>["true", "false"]                                                                                                                                                                                                 |
+| SortKey                   |          | Name    |           | ファイルの読込順序キー。<br>["Name"（ファイル名）, "Date"（更新日時）]                                                                                                                            |
+| SortOrder                 |          | Asc     |           | ファイルの読込順序。<br>["Asc"（昇順）, "Desc"（降順）]                                                                                                                                            |
+| WaitTime                  |          | 0       |           | メッセージ送信後待機時間(ミリ秒)。                                                                                                                                            |
 
 ### Desired Properties
 
 #### Desired Properties の値
 
-| JSON Key                      | File Type                   | Required | Default | Description                                                                                                                                                                                                                                                                       |
-| ----------------------------- | --------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| info[x]                       | 共通                        | 〇       |         | 監視するファイル情報 （[x]は連番の数字）。                                                                                                                                                                                                                                        |
-| &nbsp; file_type              | 共通                        | 〇       |         | 監視するファイルの種別。<br>（Standard ： "standard", AAA ： "aaa"のいずれかで指定）                                                                                                                                                                                 |
-| &nbsp; output_name            | 共通                        | 〇       |         | 送信するメッセージのアウトプット名。                                                                                                                                                                                                                                                |
-| &nbsp; error_output_name      | 共通                        |          | null    | エラー時に送信するメッセージのアウトプット名。                                                                                                                                                                                                                                      |
-| &nbsp; filter                 | 共通                        | 〇       |         | 監視ファイルのファイル名パターン （正規表現で指定）。                                                                                                                                                                                                                               |
-| &nbsp; encode                 | 共通                        | 〇       |         | 監視ファイルのエンコードタイプ。<br>（utf-8 , shift-jis）                                                                                                                                                                                                                             |
-| &nbsp; delimiter              | 共通                        | 〇       |         | ファイルの区切り文字。                                                                                                                                                                                                                                                              |
-| &nbsp; data_start_line        | 共通                        | 〇       |         | データ部の先頭行番号。                                                                                                                                                                                                                                                              |
-| &nbsp; eof_enabled            | 共通                        | 〇       |         | ファイルの終了を意図するメッセージの送信可否。                                                                                                                                                                                                                                      |
-| &nbsp; after_process          | 共通                        | 〇       |         | ファイル読取後のファイル処理情報。<br>（移動 ： "move", 削除 ： "delete"のいずれかで指定）                                                                                                                                                                                             |
-| &nbsp; send_header_enabled    | Standard                    | 〇       |         | ヘッダ行をメッセージ送信するか。                                                                                                                                                                                                                                                    |
-| &nbsp; header_start_line      | AAA, <br>Standard ※ | 〇       |         | ヘッダ行の開始行番号。<br>※ ファイルタイプがStandardの場合は、「send_header_enabled」がtrueの場合のみ有効                                                                                                                                                                           |
-| &nbsp; header_end_line        | AAA, <br>Standard ※ | 〇       |         | ヘッダ行の終了行番号。<br>※ ファイルタイプがStandardの場合は、「send_header_enabled」がtrueの場合のみ有効                                                                                                                                                                           |
-| &nbsp; header_filter          | AAA                         |          |         | 指定した場合、ヘッダの値を置き換える。<br> ("{置換前の値}": "{置換後の値}")                                                                                                                                                                                                                           |
-| &nbsp; ignore_first_row       | AAA                         |          | false   | レコード1列目を除去する。                                                                                                                                                                                                                                                           |
-| &nbsp; data_interval          | AAA                         |          | 1       | データ部の送信行間隔。                                                                                                                                                                                                                                                              |
-| &nbsp; data_conbine           | AAA                         |          | false   | 全データレコードを1レコードに結合する。                                                                                                                                                                                                                                             |
-| &nbsp; data_property[y]       | Standard                    |          | null    | データ部の送信メッセージに含むプロパティ情報 （[y]は1から始まる連番）。                                                                                                                                                                                                             |
-| &nbsp; &nbsp; name            |                             |          | null    | プロパティ名。                                                                                                                                                                                                                                                                      |
-| &nbsp; &nbsp; column          |                             |          | null    | プロパティとしてセットするデータの列番。                                                                                                                                                                                                                                            |
-| &nbsp; &nbsp; get_from        |                             |          | message | プロパティとしてセットするデータの取得元。<br>["message", "file"]<br>"message"を指定した場合、 出力メッセージ毎の先頭レコードから取得する。<br>"file"を指定した場合、入力ファイルの先頭レコードから取得する。                                                                                                                                                                                                                                                                     |
-| &nbsp; culture                | 共通                        |          | ja-JP   | ユーザーカルチャー。                                                                                                                                                                                                                                                              |
-| &nbsp; send_max_records       | 共通                        |          | 0       | 1回のメッセージ送信で送信する最大行数。<br>※1以上の数値： ファイル内で指定行数毎、または最終行に到達した時点で送信する<br> 0以下の数値： ファイルの最終行に到達した時点で送信する                                                                                                   |
-| &nbsp; record_data_num        | 共通                        |          | 0       | 1レコード内の送信する最大列数を指定する。<br>※1以上の数値： 指定列までのデータを送信する<br>0以下の数値： すべての列を送信する                                                                                                    |
-| &nbsp; filename_properties_enabled | 共通                        |          | false       | GAUDI標準のCSVファイル命名規約に従いMessageのUserPropertiesを付与する。<ul><li>CSVファイル命名規約 ※()は桁数<br> {送信先No.(3)}\_{フォーマットNo.(3)}\_{データ取得場所(15)}\_{可変データ(N)}.csv</li><li>データ取得場所の詳細</li><ul><li>国(2)</li><li>会社(2)</li><li>工場・棟(3)</li><li>データ種別(3)</li><li>フリーエリア(5)</li></ul></ul>                                                                                  |
-| &nbsp; data_edit_option[y]    | 共通                        |          | null    | データの特殊変換指定 （[y]は1から始まる連番）。                                                                                                                                                                                                                                     |
-| &nbsp; &nbsp; column          | 共通                        | 〇       |         | 特殊変換するカラム番号。                                                                                                                                                                                                                                                            |
-| &nbsp; &nbsp; mode            | 共通                        | 〇      |         | 処理方法。<br>round…四捨五入<br>floor…切り捨て(マイナスは切り下げ)<br>truncate…切り捨て(マイナスは切り捨て)<br>ceiling…切り上げ<br>substring…文字列の一部を数値に変換                                                                                                               |
-| &nbsp; &nbsp; digits          | 共通                        | △       |         | mode=round/floor/truncate/ceiling時必須。<br>小数桁数指定。                                                                                                                                                                                                                                                                      |
-| &nbsp; &nbsp; output_format   | 共通                        | △       |         | mode=round/floor/truncate/ceiling時必須。<br>書式指定子。                                                                                                                                                                                                                                                                        |
-| &nbsp; &nbsp; startindex      | 共通                        | △       |        | mode=substring時必須。<br>部分文字列とする文字列の開始インデックス。                                                                                                                                                                                                 |
-| &nbsp; &nbsp; length          | 共通                        |          | -1    | mode=substring時のみ有効。<br>部分文字列とする文字列の長さ。<br>-1を指定時無効。                                                                                                                                                                                                             |
+| JSON Key                           | File Type                   | Required | Default | Recommend | Description                                                                |
+| ---------------------------------- | --------------------------- | -------- | ------- | --------- | ------------------------------------------------------------------------   |
+| info[x]                            | 共通                        | 〇       |         |           | 監視するファイル情報 （[x]は連番の数字）。                                                                                                                                                                                                                                        |
+| &nbsp; file_type                   | 共通                        | 〇       |         |           | 監視するファイルの種別。<br>（Standard ： "standard", AAA ： "aaa", 生開標準 ： "pd"のいずれかで指定）                                                                                                                                                                                 |
+| &nbsp; output_name                 | 共通                        | 〇       |         |           | 送信するメッセージのアウトプット名。                                                                                                                                                                                                                                                |
+| &nbsp; error_output_name           | 共通                        |          | null    |           | エラー時に送信するメッセージのアウトプット名。                                                                                                                                                                                                                                      |
+| &nbsp; filter                      | 共通                        | 〇       |         |           | 監視ファイルのファイル名パターン （正規表現で指定）。                                                                                                                                                                                                                               |
+| &nbsp; encode                      | 共通                        | 〇       |         |           | 監視ファイルのエンコードタイプ。<br>（utf-8 , shift-jis）                                                                                                                                                                                                                             |
+| &nbsp; delimiter                   | 共通                        | 〇       |         |           | ファイルの区切り文字。                                                                                                                                                                                                                                                              |
+| &nbsp; data_start_line             | 共通                        | 〇       |         |           | データ部の先頭行番号。                                                                                                                                                                                                                                                              |
+| &nbsp; eof_enabled                 | 共通                        | 〇       |         |           | ファイルの終了を意図するメッセージの送信可否。                                                                                                                                                                                                                                      |
+| &nbsp; after_process               | 共通                        | 〇       |         |           | ファイル読取後のファイル処理情報。<br>（移動 ： "move", 削除 ： "delete"のいずれかで指定）                                                                                                                                                                                             |
+| &nbsp; send_header_enabled         | Standard                    | 〇       |         |           | ヘッダ行をメッセージ送信するか。                                                                                                                                                                                                                                                    |
+| &nbsp; header_start_line           | AAA, 生開標準<br>Standard ※ | △       |         |           | ヘッダ行の開始行番号。file_type=aaa/pd時必須。<br>※ ファイルタイプがStandardの場合は、「send_header_enabled」がtrueの場合のみ有効                                                                                                                                                                           |
+| &nbsp; header_end_line             | AAA, 生開標準<br>Standard ※ | △       |         |           | ヘッダ行の終了行番号。file_type=aaa/pd時必須。<br>※ ファイルタイプがStandardの場合は、「send_header_enabled」がtrueの場合のみ有効                                                                                                                                                                           |
+| &nbsp; header_filter               | AAA                         |          |         |           | 指定した場合、ヘッダの値を置き換える。<br> ("{置換前の値}": "{置換後の値}")                                                                                                                                                                                                                           |
+| &nbsp; ignore_first_row            | AAA                         |          | false   |           | レコード1列目を除去する。                                                                                                                                                                                                                                                           |
+| &nbsp; data_interval               | AAA                         |          | 1       |           | データ部の送信行間隔。                                                                                                                                                                                                                                                              |
+| &nbsp; data_conbine                | AAA                         |          | false   |           | 全データレコードを1レコードに結合する。                                                                                                                                                                                                                                             |
+| &nbsp; sampling_interval_line      | 生開標準                     | 〇       |         |           | サンプリング間隔を示す行の行番号。file_type=pd時必須。<br>※指定行から取得したサンプリング間隔を基にデータ部に以下の処理を行う<br>0より大きい数値：レコードの先頭に「sampling_base_time」を基に前レコードにサンプリング間隔を足した時間を挿入する<br>0以下の数値： 全データレコードを1レコードに結合する |
+| &nbsp; sampling_base_time          | 生開標準                     |          | 0.0     |           | サンプリング間隔の開始タイムスタンプ。                                                                                                                                                                                                                                              |
+| &nbsp; timestamp_format            | 生開標準                     | 〇       |         |           | タイムスタンプのフォーマット。                                                                                                                                                                                                                                                      |
+| &nbsp; data_property[y]            | Standard                    |          | null    |           | データ部の送信メッセージに含むプロパティ情報 （[y]は1から始まる連番）。                                                                                                                                                                                                             |
+| &nbsp; &nbsp; name                 |                             |          | null    |           | プロパティ名。                                                                                                                                                                                                                                                                      |
+| &nbsp; &nbsp; column               |                             |          | null    |           | プロパティとしてセットするデータの列番。                                                                                                                                                                                                                                            |
+| &nbsp; &nbsp; get_from             |                             |          | message |           | プロパティとしてセットするデータの取得元。<br>["message", "file"]<br>"message"を指定した場合、 出力メッセージ毎の先頭レコードから取得する。<br>"file"を指定した場合、入力ファイルの先頭レコードから取得する。                                                                                                                                                                                                                                                                     |
+| &nbsp; culture                     | 共通                        |          | ja-JP   |           | ユーザーカルチャー。                                                                                                                                                                                                                                                              |
+| &nbsp; send_max_records            | 共通                        |          | 0       |           | 1回のメッセージ送信で送信する最大行数。<br>※1以上の数値： ファイル内で指定行数毎、または最終行に到達した時点で送信する<br> 0以下の数値： ファイルの最終行に到達した時点で送信する                                                                                                   |
+| &nbsp; record_data_num             | 共通                        |          | 0       |           | 1レコード内の送信する最大列数を指定する。<br>※1以上の数値： 指定列までのデータを送信する<br>0以下の数値： すべての列を送信する                                                                                                    |
+| &nbsp; filename_properties_enabled | 共通                        |          | false   |           | GAUDI標準のCSVファイル命名規約に従いMessageのUserPropertiesを付与する。<ul><li>CSVファイル命名規約 ※()は桁数<br> {送信先No.(3)}\_{フォーマットNo.(3または4)}\_{データ取得場所(15)}\_{可変データ(N)}.csv</li><li>データ取得場所の詳細</li><ul><li>国(2)</li><li>会社(2)</li><li>工場・棟(3)</li><li>データ種別(3)</li><li>フリーエリア(5)</li></ul></ul>                                                                                  |
+| &nbsp; data_edit_option[y]         | 共通                        |          | null    |           | データの特殊変換指定 （[y]は1から始まる連番）。                                                                                                                                                                                                                                     |
+| &nbsp; &nbsp; column               | 共通                        | 〇       |         |           | 特殊変換するカラム番号。                                                                                                                                                                                                                                                            |
+| &nbsp; &nbsp; mode                 | 共通                        | 〇       |         |           | 処理方法。<br>round…四捨五入<br>floor…切り捨て(マイナスは切り下げ)<br>truncate…切り捨て(マイナスは切り捨て)<br>ceiling…切り上げ<br>substring…文字列の一部を数値に変換                                                                                                               |
+| &nbsp; &nbsp; digits               | 共通                        | △       |         |           | mode=round/floor/truncate/ceiling時必須。<br>小数桁数指定。                                                                                                                                                                                                                                                                      |
+| &nbsp; &nbsp; output_format        | 共通                        | △       |         |           | mode=round/floor/truncate/ceiling時必須。<br>書式指定子。                                                                                                                                                                                                                                                                        |
+| &nbsp; &nbsp; startindex           | 共通                        | △       |       　 |           | mode=substring時必須。<br>部分文字列とする文字列の開始インデックス。                                                                                                                                                                                                 |
+| &nbsp; &nbsp; length               | 共通                        |          | -1   　  |           | mode=substring時のみ有効。<br>部分文字列とする文字列の長さ。<br>-1を指定時無効。                                                                                                                                                                                                             |
 
 #### Desired Properties の記入例
 
-```
+```json
 {
   "info1": {
     "file_type": "standard",
@@ -167,7 +170,7 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 #### Create Option の記入例
 
-```
+```json
 {
   "HostConfig": {
     "Binds": [
@@ -176,6 +179,22 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
       "/var/ftp/quality/Error:/iotedge/errorpath"
     ]
   }
+}
+```
+
+### startupOrder
+
+#### startupOrder の値
+
+| JSON Key      | Type    | Required | Default | Recommend | Description |
+| ------------- | ------- | -------- | ------- | --------- | ----------- |
+| startupOrder  | uint    |  | 4294967295 | xxx | モジュールの起動順序。数字が小さいほど先に起動される。<br>["0"から"4294967295"] |
+
+#### startupOrder の記入例
+
+```json
+{
+  "startupOrder": 600
 }
 ```
 
@@ -216,7 +235,77 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 ## Direct Method
 
-なし
+### SetLogLevel
+
+* 機能概要
+
+  実行中に一時的にLogLevelを変更する。<br>
+  変更はモジュール起動中または有効時間を過ぎるまで有効。<br>
+
+* payload
+
+  | JSON Key      | Type    | Required | default | Description |
+  | ------------- | ------- | -------- | -------- | ----------- |
+  | EnableSec     | integer  | 〇       |          | 有効時間(秒)。<br>-1:無期限<br>0:リセット(環境変数LogLevel相当に戻る)<br>1以上：指定時間(秒)経過まで有効。  |
+  | LogLevel      | string  | △       |          | EnableSec=0以外を指定時必須。指定したログレベルに変更する。<br>["trace", "debug", "info", "warn", "error"]  |
+
+  １時間"trace"レベルに変更する場合の設定例
+
+  ```json
+  {
+    "EnableSec": 3600,
+    "LogLevel": "trace"
+  }
+  ```
+
+* response
+
+  | JSON Key      | Type    | Description |
+  | ------------- | ------- | ----------- |
+  | status          | integer | 処理ステータス。<br>0:正常終了<br>その他:異常終了         |
+  | payload          | object  | レスポンスデータ。         |
+  | &nbsp; CurrentLogLevel | string  | 設定後のログレベル。（正常時のみ）<br>["trace", "debug", "info", "warn", "error"]  |
+  | &nbsp; Error | string  | エラーメッセージ（エラー時のみ）  |
+
+  ```json
+  {
+    "status": 0,
+    "paylaod":
+    {
+      "CurrentLogLevel": "trace"
+    }
+  }
+  ```
+
+### GetLogLevel
+
+* 機能概要
+
+  現在有効なLogLevelを取得する。<br>
+  通常は、LogLevel環境変数の設定値が返り、SetLogLevelで設定した有効時間内の場合は、その設定値が返る。<br>
+
+* payload
+
+  なし
+
+* response
+
+  | JSON Key      | Type    | Description |
+  | ------------- | ------- | ----------- |
+  | status          | integer | 処理ステータス。<br>0:正常終了<br>その他:異常終了         |
+  | payload          | object  | レスポンスデータ。         |
+  | &nbsp; CurrentLogLevel | string  | 現在のログレベル。（正常時のみ）<br>["trace", "debug", "info", "warn", "error"]  |
+  | &nbsp; Error | string  | エラーメッセージ（エラー時のみ）  |
+
+  ```json
+  {
+    "status": 0,
+    "paylaod":
+    {
+      "CurrentLogLevel": "trace"
+    }
+  }
+  ```
 
 ## ログ出力内容
 
@@ -230,10 +319,10 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 ## ユースケース
 
-ケース① : ある決まったフォルダに不定期間隔でアップロードされるCSVファイルを読み取り、InfluxDBにデータを格納する。<br>
-ケース② : ある決まったフォルダに不定期間隔でアップロードされるCSVファイルを読み取り、IoTHubに送信する。
+ケース① : ある決まったフォルダ(サブフォルダを含まない)に不定期間隔でアップロードされるCSVファイルを読み取り、InfluxDBにデータを格納する。<br>
+ケース② : ある決まったフォルダ(サブフォルダを含む)に不定期間隔でアップロードされるCSVファイルを読み取り、IoTHubに送信する。
 
-![schematic diagram](./docs/img/usecase_diagram.drawio.png)
+![schematic diagram](./docs//img/usecase_diagram.drawio.png)
 
 <a id="Usecase1"></a>
 
@@ -241,7 +330,7 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 #### DesiredProperties
 
-```
+```json
 {
   "info1": {
     "file_type": "standard",
@@ -292,10 +381,27 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 }
 ```
 
+#### 環境変数
+
+| 名称                | 値                           |
+| ------------------- | ---------------------------- |
+| TransportProtocol   | Amqp                         |
+| LogLevel            | info                         |
+| InputPath           | /iotedge/storage/input       |
+| BackupPath          | /iotedge/storage/backup      |
+| ErrorPath           | /iotedge/storage/error       |
+| MaximumRetryCount   | 5                            |
+| RetryInterval       | 5000                         |
+| IncludeSubFolder    | false                        |
+| SortKey             | Name                         |
+| SortOrder           | Asc                          |
+| WaitTime            | 0                            |
+
 #### 出力結果
 
 ex.CSVが以下の条件である場合
 
+1. 監視するフォルダ内（サブフォルダを含まない）にファイルが存在する
 1. ファイル名のフォーマットが"005\_007\_JP0130100430103\_{任意の文字列}.csvである
 1. ファイルのエンコード文字列がshift-jisである
 1. 文字列はカンマ区切りである
@@ -309,7 +415,7 @@ ex.CSVが以下の条件である場合
 
 #### 出力メッセージ(最終行通知メッセージ以外)
 
-```
+```json
 {
   "RecordHeader": [{"ファイル名"},{"行番号"}],
   "RecordData": [{"CSVのレコードデータ"}],
@@ -335,7 +441,7 @@ ex.CSVが以下の条件である場合
 
 #### 出力メッセージ(最終行通知メッセージ)
 
-```
+```json
 {
   "RecordHeader": [{"ファイル名"},{"行番号"}],
   "RecordData": [],
@@ -365,7 +471,7 @@ ex.CSVが以下の条件である場合
 
 #### DesiredProperties
 
-```
+```json
 {
   "info1": {
     "file_type": "standard",
@@ -382,10 +488,27 @@ ex.CSVが以下の条件である場合
 }
 ```
 
+#### 環境変数
+
+| 名称                | 値                           |
+| ------------------- | ---------------------------- |
+| TransportProtocol   | Amqp                         |
+| LogLevel            | info                         |
+| InputPath           | /iotedge/storage/input       |
+| BackupPath          | /iotedge/storage/backup      |
+| ErrorPath           | /iotedge/storage/error       |
+| MaximumRetryCount   | 5                            |
+| RetryInterval       | 5000                         |
+| IncludeSubFolder    | true                         |
+| SortKey             | Name                         |
+| SortOrder           | Asc                          |
+| WaitTime            | 0                            |
+
 #### 出力結果
 
 ex.CSVが以下の条件である場合
 
+1. 監視するフォルダ内（サブフォルダを含む）にファイルが存在する
 1. ファイル名のフォーマットが"005\_017\_JP0130100g30102\_{任意の文字列}.csvである
 1. ファイルのエンコード文字列がshift-jisである
 1. 文字列はカンマ区切りである
@@ -398,7 +521,7 @@ ex.CSVが以下の条件である場合
 
 #### 出力メッセージ(最終行通知メッセージ以外)
 
-```
+```JSON
 {
   "RecordHeader": [{"ファイル名"},{"行番号"}],
   "RecordData": [{"CSVのレコードデータ"}],

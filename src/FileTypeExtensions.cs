@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
+using TICO.GAUDI.Commons;
 
-namespace CSVFileReceiver
+namespace IotedgeV2CSVFileReceiver
 {
     public enum FileType
     {
@@ -15,32 +17,44 @@ namespace CSVFileReceiver
     {
         public static string ToString(this FileType self)
         {
+            string result = null;
             switch (self)
             {
                 case FileType.Standard:
-                    return "standard";
+                    result = "standard";
+                    break;
                 case FileType.AAA:
-                    return "aaa";
+                    result =  "aaa";
+                    break;
                 case FileType.ProductDevelopment:
-                    return "pd";
+                    result = "pd";
+                    break;
                 default:
-                    throw new ArgumentException($"Unexpected value {self}");
+                    var errmsg = $"Unexpected value {self}";
+                    throw new ArgumentException(errmsg);
             }
+            return result;
         }
 
         public static FileType ToFileType(this string self)
         {
+            FileType result;
             switch (self.ToLower())
             {
                 case "standard":
-                    return FileType.Standard;
+                    result = FileType.Standard;
+                    break;
                 case "aaa":
-                    return FileType.AAA;
+                    result = FileType.AAA;
+                    break;
                 case "pd":
-                    return FileType.ProductDevelopment;
+                    result = FileType.ProductDevelopment;
+                    break;
                 default:
-                    throw new ArgumentException($"Unexpected value {self}");
+                    var errmsg = $"Unexpected value {self}";
+                    throw new ArgumentException(errmsg);
             }
+            return result;
         }
 
         public static bool IsExists(this FileType self)
