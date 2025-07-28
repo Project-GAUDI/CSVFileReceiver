@@ -15,7 +15,7 @@ RUN chmod +x ./entrypoint.sh
 
 RUN { \
     echo "module name : CSVFileReceiver"; \
-    echo "module version : 6.0.0"; \
+    echo "module version : 6.0.2"; \
 } > ./application.info
 
 RUN useradd -ms /bin/bash moduleuser

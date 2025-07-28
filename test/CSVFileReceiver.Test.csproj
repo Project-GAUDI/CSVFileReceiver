@@ -20,7 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\CSVFileReceiver.csproj" />
-    <PackageReference Include="TICO.GAUDI.Commons.Test" Version="6.0.4" />
+    <PackageReference Include="TICO.GAUDI.Commons.Test" Version="6.0.5" />
   </ItemGroup>
 
 </Project>
