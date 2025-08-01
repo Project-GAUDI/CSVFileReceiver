@@ -75,9 +75,9 @@ docker push ghcr.io/<YOUR_GITHUB_USERNAME>/csvfilereceiver:<VERSION>
 
 ## 動作保証環境
 
-| Module Version | IoTEdge | edgeAgent | edgeHub  | amd64 verified on | arm64v8 verified on | arm32v7 verified on |
-| -------------- | ------- | --------- | -------- | ----------------- | ------------------- | ------------------- |
-| 6.0.2          | 1.5.0<br>1.5.16 | 1.5.6<br>1.5.19 | 1.5.6<br>1.5.19 | ubuntu22.04       | －                  | －                  |
+| Module Version | IoTEdge         | edgeAgent       | edgeHub         | amd64 verified on | arm64v8 verified on | arm32v7 verified on |
+| -------------- | --------------- | --------------- | --------------- | ----------------- | ------------------- | ------------------- |
+| 6.0.3          | 1.5.21          | 1.5.21          | 1.5.21          | ubuntu22.04       | －                  | －                  |
 
 ## Deployment 設定値
 
