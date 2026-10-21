@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -16,8 +17,14 @@ namespace IotedgeV2CSVFileReceiver
     internal class MyApplicationMain : IApplicationMain
     {
         static ILogger MyLogger { get; } = LoggerFactory.GetLogger(typeof(MyApplicationMain));
+        private int _disposed = 0; // 0: false, 1: true
 
         const string DP_INFO_KEY = "info";
+        const string DP_DEFAULT_INFO_KEY = "default_info";
+        const string DP_MAX_FILE_SIZE_KEY = "max_file_size";
+        const long DEFAULT_MAX_FILE_SIZE = -1;
+        const double SIZE_CHECK_THRESHOLD = 0.9;
+        const long JSON_OVERHEAD = 16; // {"RecordList":[]}
 
         static string InputPath { get; set; } = null;
 
@@ -43,13 +50,39 @@ namespace IotedgeV2CSVFileReceiver
 
         static bool backupEnabled = false;
 
-        public void Dispose()
+        /// <summary>
+        /// リソース解放
+        /// </summary>
+        /// <returns></returns>
+        public async ValueTask DisposeAsync()
         {
-            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: Dispose");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: DisposeAsync");
 
-            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: Dispose");
+            // 2重実行防止
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: Already disposed, skipping DisposeAsync");
+                return;
+            }
+
+            try
+            {
+                // ここでApplicationMainのリソース解放処理を行う
+                // 非同期リソースがある場合は適切に解放する
+                // ＝＝＝＝＝＝＝＝＝＝＝＝＝ここから＝＝＝＝＝＝＝＝＝＝＝＝＝
+
+                await Task.CompletedTask; // 非同期リソース解放処理をここに記述
+
+                // ＝＝＝＝＝＝＝＝＝＝＝＝＝ここまで＝＝＝＝＝＝＝＝＝＝＝＝＝
+            }
+            catch (Exception ex)
+            {
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"Error in DisposeAsync: {ex.Message}", true);
+                // 例外は再スローしない（Disposeでは通常例外を抑制）
+            }
+
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: DisposeAsync");
         }
-
         /// <summary>
         /// アプリケーション初期化					
         /// システム初期化前に呼び出される
@@ -66,158 +99,48 @@ namespace IotedgeV2CSVFileReceiver
 
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-            // モジュール固有の環境変数
-            InputPath = Environment.GetEnvironmentVariable("InputPath");
-            if (string.IsNullOrEmpty(InputPath))
+            try
             {
-                var errmsg = "Environment InputPath does not set.";
-                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
-                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: InitializeAsync caused by {errmsg}");
+                // モジュール固有の環境変数
+                InputPath = Util.GetEnvironmentVariable<string>("InputPath", true);
+                if (!Directory.Exists(InputPath))
+                {
+                    var errmsg = $"Environment InputPath[{InputPath}] does not exist.";
+                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
+                    throw new Exception(errmsg);
+                }
+                BackupPath = Util.GetEnvironmentVariable<string>("BackupPath", false, null);
+                if (BackupPath == null)
+                {
+                    MyLogger.WriteLog(ILogger.LogLevel.INFO, $"BackupPath is not set.");
+                }
+                else if (Directory.Exists(BackupPath))
+                {
+                    backupEnabled = true;
+                }
+                ErrorPath = Util.GetEnvironmentVariable<string>("ErrorPath", true);
+                if (!Directory.Exists(ErrorPath))
+                {
+                    var errmsg = $"Environment ErrorPath[{ErrorPath}] does not exist.";
+                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
+                    throw new Exception(errmsg);
+                }
+
+                MaximumRetryCount = Util.GetEnvironmentVariable<int>("MaximumRetryCount", false, 5, condition: (value) => value >= 1);
+                RetryInterval = Util.GetEnvironmentVariable<int>("RetryInterval", false, 5000, condition: (value) => value >= 0);
+                WaitTime = Util.GetEnvironmentVariable<int>("WaitTime", false, 0, condition: (value) => value >= 0);
+                IncludeSubFolder = Util.GetEnvironmentVariable<bool>("IncludeSubFolder", false, false);
+                SortKey = Util.GetEnvironmentVariable("SortKey", false, "Name", condition: (value) => value.Equals("Name") || value.Equals("Date"));
+                SortOrder = Util.GetEnvironmentVariable("SortOrder", false, "Asc", condition: (value) => value.Equals("Asc") || value.Equals("Desc"));
+            }
+            catch (Exception ex)
+            {
+                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: InitializeAsync caused by {ex.Message}");
                 retStatus = false;
                 return retStatus;
             }
-            else if (!Directory.Exists(InputPath))
-            {
-                var errmsg = $"Environment InputPath[{InputPath}] does not exist.";
-                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
-                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: InitializeAsync caused by {errmsg}");
-                retStatus = false;
-                return retStatus;
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"InputPath = {InputPath}");
-
-            backupEnabled = false;
-            BackupPath = Environment.GetEnvironmentVariable("BackupPath");
-            if (string.IsNullOrEmpty(BackupPath))
-            {
-                MyLogger.WriteLog(ILogger.LogLevel.INFO, "Environment BackupPath does not set. File back up is disabled.");
-            }
-            else if (Directory.Exists(BackupPath))
-            {
-                MyLogger.WriteLog(ILogger.LogLevel.INFO, $"BackupPath = {BackupPath}");
-                backupEnabled = true;
-            }
-            else
-            {
-                var errmsg = $"Environment BackupPath[{BackupPath}] does not exist.";
-                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
-                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: InitializeAsync caused by {errmsg}");
-                retStatus = false;
-                return retStatus;
-            }
-
-            ErrorPath = Environment.GetEnvironmentVariable("ErrorPath");
-            if (string.IsNullOrEmpty(ErrorPath))
-            {
-                var errmsg = "Environment ErrorPath does not set.";
-                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
-                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: InitializeAsync caused by {errmsg}");
-                retStatus = false;
-                return retStatus;
-            }
-            else if (!Directory.Exists(ErrorPath))
-            {
-                var errmsg = $"Environment ErrorPath[{ErrorPath}] does not exist.";
-                MyLogger.WriteLog(ILogger.LogLevel.ERROR, $"{errmsg}", true);
-                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: InitializeAsync caused by {errmsg}");
-                retStatus = false;
-                return retStatus;
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"ErrorPath = {ErrorPath}");
-
-            MaximumRetryCount = 5;
-            string maxCon = Environment.GetEnvironmentVariable("MaximumRetryCount");
-            if (!string.IsNullOrEmpty(maxCon))
-            {
-                if (int.TryParse(maxCon, out int con) && 1 <= con)
-                {
-                    MaximumRetryCount = con;
-                }
-                else
-                {
-                    MyLogger.WriteLog(ILogger.LogLevel.WARN, $"Environment MaximumRetryCount can't set {maxCon}. Default value ({MaximumRetryCount}) assigned.");
-                }
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"MaximumRetryCount = {MaximumRetryCount}");
-
-            RetryInterval = 5000;
-            string interval = Environment.GetEnvironmentVariable("RetryInterval");
-            if (!string.IsNullOrEmpty(interval))
-            {
-                if (int.TryParse(interval, out int i) && 0 <= i)
-                {
-                    RetryInterval = i;
-                }
-                else
-                {
-                    MyLogger.WriteLog(ILogger.LogLevel.WARN, $"Environment RetryInterval can't set {interval}. Default value ({RetryInterval}) assigned.");
-                }
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"RetryInterval = {RetryInterval}");
-
-            WaitTime = 0;
-            string waittime = Environment.GetEnvironmentVariable("WaitTime");
-            if (!string.IsNullOrEmpty(waittime))
-            {
-                if (int.TryParse(waittime, out int wt) && 0 <= wt)
-                {
-                    WaitTime = wt;
-                }
-                else
-                {
-                    MyLogger.WriteLog(ILogger.LogLevel.WARN, $"Environment WaitTime can't set {waittime}. Default value ({WaitTime}) assigned.");
-                }
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"WaitTime = {WaitTime}");
-
-            IncludeSubFolder = false;
-            string strIncSubFld = Environment.GetEnvironmentVariable("IncludeSubFolder");
-            if (!string.IsNullOrEmpty(strIncSubFld))
-            {
-                if (Boolean.TryParse(strIncSubFld, out bool incSubFld))
-                {
-                    IncludeSubFolder = incSubFld;
-                }
-                else
-                {
-                    MyLogger.WriteLog(ILogger.LogLevel.WARN, $"Environment IncludeSubFolder can't set {strIncSubFld}. Default value ({IncludeSubFolder}) assigned.");
-                }
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"IncludeSubFolder = {IncludeSubFolder}");
-
-            SortKey = "Name";
-            string key = Environment.GetEnvironmentVariable("SortKey");
-            if (!string.IsNullOrEmpty(key))
-            {
-                if (key.Equals("Name") || key.Equals("Date"))
-                {
-                    SortKey = key;
-                }
-                else
-                {
-                    MyLogger.WriteLog(ILogger.LogLevel.WARN, $"Environment SortKey can't set {key}. Default value ({SortKey}) assigned.");
-                }
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"SortKey = {SortKey}");
-
-            SortOrder = "Asc";
-            string order = Environment.GetEnvironmentVariable("SortOrder");
-            if (!string.IsNullOrEmpty(order))
-            {
-                if (order.Equals("Asc") || order.Equals("Desc"))
-                {
-                    SortOrder = order;
-                }
-                else
-                {
-                    MyLogger.WriteLog(ILogger.LogLevel.WARN, $"Environment SortOrder can't set {order}. Default value ({SortOrder}) assigned.");
-                }
-            }
-            MyLogger.WriteLog(ILogger.LogLevel.INFO, $"SortOrder = {SortOrder}");
-
             await Task.CompletedTask;
             // ＝＝＝＝＝＝＝＝＝＝＝＝＝ここまで＝＝＝＝＝＝＝＝＝＝＝＝＝
-
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: InitializeAsync");
             return retStatus;
         }
@@ -226,7 +149,6 @@ namespace IotedgeV2CSVFileReceiver
         /// アプリケーション起動処理					
         /// システム初期化完了後に呼び出される
         /// </summary>
-        /// <param name=""></param>
         /// <returns></returns>
         public async Task<bool> StartAsync()
         {
@@ -294,11 +216,14 @@ namespace IotedgeV2CSVFileReceiver
             TargetInfos = new List<TargetInfo>();
             try
             {
+                var defaultInfo = Util.GetDesiredProperty<JObject>(desiredProperties, DP_DEFAULT_INFO_KEY, false, new JObject());
+                var maxFileSize = Util.GetDesiredProperty<double>(defaultInfo, DP_MAX_FILE_SIZE_KEY, false, DEFAULT_MAX_FILE_SIZE, condition: (value) => value == -1 || (value >= 1 && value == Math.Floor(value) && value <= long.MaxValue / 1_000_000L));
+                var defaultMaxFileSize = (long)maxFileSize;
                 for (int i = 1; desiredProperties.ContainsKey(DP_INFO_KEY + i.ToString("D")); i++)
                 {
                     string key = DP_INFO_KEY + i.ToString("D");
-                    JObject jobj = Util.GetRequiredValue<JObject>(desiredProperties, key);
-                    var target = TargetInfo.CreateInstance(jobj, backupEnabled, MyLogger);
+                    JObject jobj = Util.GetDesiredProperty<JObject>(desiredProperties, key, true);
+                    var target = TargetInfo.CreateInstance(jobj, backupEnabled, MyLogger, defaultMaxFileSize);
                     TargetInfos.Add(target);
                     if (MyLogger.IsLogLevelToOutput(ILogger.LogLevel.INFO))
                     {
@@ -373,7 +298,7 @@ namespace IotedgeV2CSVFileReceiver
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: MyWatcher_OnFileDetected");
         }
 
-        /// SearchInputFileAsyncから呼び出しのみ、Set/Unset不要
+        /// MyWatcher_OnFileDetectedから呼び出しのみ、Set/Unset不要
         static async Task SendMessageAsync(FileInfo file, TargetInfo info)
         {
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: SendMessageAsync");
@@ -381,7 +306,7 @@ namespace IotedgeV2CSVFileReceiver
             var filenameProps = new Dictionary<string, string>();
             if (info.FilenamePropertiesEnabled)
             {
-                string pattern = "[0-9a-zA-Z]{3}_(?<format>[0-9a-zA-Z]{3,4})_(?<country>[0-9a-zA-Z]{2})(?<company>[0-9a-zA-Z]{2})(?<factory>[0-9a-zA-Z]{3})(?<data_type>[0-9a-zA-Z]{3})(?<free_area>[0-9a-zA-Z]{5})_.+\\.(C|c)(S|s)(V|v)";
+                string pattern = "^[0-9a-zA-Z]{3}_(?<format>[0-9a-zA-Z]{3,4})_(?<country>[0-9a-zA-Z]{2})(?<company>[0-9a-zA-Z]{2})(?<factory>[0-9a-zA-Z]{3})(?<data_type>[0-9a-zA-Z]{3})(?<free_area>[0-9a-zA-Z]{5})_.+\\.(C|c)(S|s)(V|v)$";
                 Regex reg = new Regex(pattern);
                 Match m = reg.Match(file.Name);
                 if (m.Success)
@@ -396,9 +321,17 @@ namespace IotedgeV2CSVFileReceiver
                 else
                 {
                     var errmsg = $"ファイル名({file.Name})がGAUDI標準のCSVファイル命名規約「送信先No.(3桁)_フォーマットNo.(3桁または4桁)_データ取得場所(15桁)_可変データ(N桁).csv」に従っていません.";
-                    MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SendMessageAsync caused by {errmsg}");
+                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);
                     throw new Exception(errmsg);
                 }
+            }
+
+            file.Refresh();
+            if (file.Exists && info.FileSizeLimitBytes > 0 && file.Length > info.FileSizeLimitBytes)
+            {
+                var errmsg = $"File '{file.Name}' size ({file.Length} bytes) exceeds the configured maximum ({info.FileSizeLimitBytes} bytes).";
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);
+                throw new Exception(errmsg);
             }
 
             List<List<string>> lines = null;
@@ -406,7 +339,7 @@ namespace IotedgeV2CSVFileReceiver
 
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"get records count:{lines.Count}");
             var firstDataProp = new Dictionary<string, string>();
-            if (info.FileType.Equals(FileType.Standard) && (info.SendHeaderEnabled || info.EofEnabled))
+            if (info.SendHeaderEnabled || info.EofEnabled || info.ColumnsLine.HasValue)
             {
                 if (!lines.Any())
                 {
@@ -414,6 +347,33 @@ namespace IotedgeV2CSVFileReceiver
                     MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: SendMessageAsync caused by {exitmsg}");
                     return;
                 }
+            }
+
+            // ファイル行数に対するバリデーション
+            int totalLines = lines.Count;
+            if (info.SendHeaderEnabled && totalLines < info.HeaderStartLine)
+            {
+                var errmsg = $"File has {totalLines} lines, but header_start_line is {info.HeaderStartLine}.";
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);
+                throw new Exception(errmsg);
+            }
+            if (info.SendHeaderEnabled && totalLines < info.HeaderEndLine)
+            {
+                var errmsg = $"File has {totalLines} lines, but header_end_line is {info.HeaderEndLine}.";
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);
+                throw new Exception(errmsg);
+            }
+            if (info.ColumnsLine.HasValue && totalLines < info.ColumnsLine.Value)
+            {
+                var errmsg = $"File has {totalLines} lines, but columns_line is {info.ColumnsLine.Value}.";
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);
+                throw new Exception(errmsg);
+            }
+            if (totalLines > 0 && totalLines < info.DataStartLine)
+            {
+                var errmsg = $"File has {totalLines} lines, but data_start_line is {info.DataStartLine}.";
+                MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);
+                throw new Exception(errmsg);
             }
 
             int startIndex = info.DataStartLine - 1;
@@ -426,33 +386,39 @@ namespace IotedgeV2CSVFileReceiver
                 }
             }
 
-            if (info.FileType.Equals(FileType.ProductDevelopment))
-            {
-                var samplingIntervalStr = lines[info.SamplingIntervalLine - 1].FirstOrDefault().Trim();
-                MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"samplingInterval: {samplingIntervalStr}");
-                decimal samplingInterval = 0;
-                if (decimal.TryParse(samplingIntervalStr, out samplingInterval))
-                {
-                    info.SamplingInterval = samplingInterval;
-                }
-            }
 
-            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Processing FileType:'{info.FileType.ToString()}' lines_count:'{lines.Count}'");
+
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Processing lines_count:'{lines.Count}'");
 
             var filename = file.Name;
             var header = new List<string>();
             var recordsData = MessageFactory.GetRecordDataFromCsvData(lines, info, MyLogger);
 
+            // columns プロパティ値を生成
+            string headerRowProperty = null;
+            if (recordsData.ColumnsRecord != null)
+            {
+                headerRowProperty = MessageFactory.CreateHeaderRowPropertyValue(recordsData.ColumnsRecord);
+            }
+
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"send_max_records: {info.SendMaximumRecords}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"max_message_size: {info.MaxMessageSize}");
+            MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"message_size_limit_bytes: {info.MessageSizeLimitBytes}");
             var jsonMsg = new JsonMessage() { RecordList = new List<JsonMessage.RecordInfo>() };
             var maxRecords = info.SendMaximumRecords;
+            var maxMessageSize = info.MessageSizeLimitBytes;
             if (!recordsData.HeaderRecords.Any()) recordsData.HeaderRecords.Add(filename);
             int cnt = 0;
             var rownum = 0;
             int sendcnt = 0;
             int rowtotal = recordsData.DataRecords.Count;
             var dataProps = new Dictionary<string, string>();
-            if (info.FileType.Equals(FileType.Standard) && recordsData.HeaderRecordsStandard.Any())
+
+            // プロパティオーバーヘッドを見積もり
+            long propertyOverhead = maxMessageSize > 0 ? EstimatePropertyOverhead(filename, rowtotal, firstDataProp, filenameProps, headerRowProperty) : 0;
+            long estimatedSize = JSON_OVERHEAD + propertyOverhead;  
+            long messageSizeLimit = maxMessageSize;  
+            if (info.SendHeaderEnabled && recordsData.HeaderRecordsStandard.Any())
             {
                 foreach (var record in recordsData.HeaderRecordsStandard)
                 {
@@ -462,11 +428,38 @@ namespace IotedgeV2CSVFileReceiver
                         dataProps = firstDataProp;
                         rownum = cnt;
                     }
-                    var recordInfo = new JsonMessage.RecordInfo() { RecordHeader = new List<string>(), RecordData = record };
-                    recordInfo.RecordHeader.AddRange(recordsData.HeaderRecords);
-                    recordInfo.RecordHeader.Add(cnt.ToString());
+                    var recordHeader = info.RecordMetadataEnabled ? new List<string>(recordsData.HeaderRecords) { cnt.ToString() } : null;
+                    var recordInfo = new JsonMessage.RecordInfo() { RecordHeader = recordHeader, RecordData = record.Cast<object>().ToList() };
                     jsonMsg.RecordList.Add(recordInfo);
-                    if (0 < maxRecords && jsonMsg.RecordList.Count == maxRecords)
+
+                    // サイズ見積もりと検証
+                    bool shouldSendBySize = false;
+                    if (maxMessageSize > 0)
+                    {
+                        var recordBytes = JsonMessage.SerializeRecordInfoByte(recordInfo);
+                        long recordSize = recordBytes != null ? recordBytes.Length : 0;
+                        estimatedSize += recordSize + 1; // +1 for comma separator
+
+                        if (estimatedSize >= (long)(messageSizeLimit * SIZE_CHECK_THRESHOLD))
+                        {
+                            var actualBytes = JsonMessage.SerializeJsonMessageByte(jsonMsg);
+                            long actualSize = actualBytes != null ? actualBytes.Length : 0;
+                            if (actualSize + propertyOverhead > messageSizeLimit)
+                            {
+                                if (jsonMsg.RecordList.Count == 1)  
+                                {  
+                                    var errmsg = $"Single record exceeds message size limit ({actualSize + propertyOverhead} bytes > {messageSizeLimit} bytes). line:{cnt}";  
+                                    MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);  
+                                    throw new Exception(errmsg);  
+                                }
+                                // 最後のレコードを次バッチに回す
+                                jsonMsg.RecordList.RemoveAt(jsonMsg.RecordList.Count - 1);
+                                shouldSendBySize = true;
+                            }
+                        }
+                    }
+
+                    if ((0 < maxRecords && jsonMsg.RecordList.Count == maxRecords) || shouldSendBySize)
                     {
                         using (var msg = MessageFactory.CreateMessage(jsonMsg, filename, rownum, rowtotal, dataProps, filenameProps))
                         {
@@ -482,7 +475,18 @@ namespace IotedgeV2CSVFileReceiver
                         // 送信するJsonMessageリストを初期化
                         jsonMsg.RecordList.Clear();
                         jsonMsg.RecordList = new List<JsonMessage.RecordInfo>();
+                        estimatedSize = JSON_OVERHEAD + propertyOverhead;
                         rownum = 0;
+
+                        // サイズ超過で次バッチに回したレコードを再追加
+                        if (shouldSendBySize)
+                        {
+                            dataProps = firstDataProp;
+                            rownum = cnt;
+                            jsonMsg.RecordList.Add(recordInfo);
+                            var readdedBytes = JsonMessage.SerializeRecordInfoByte(recordInfo);
+                            estimatedSize += (readdedBytes != null ? readdedBytes.Length : 0) + 1;
+                        }
                     }
                 }
             }
@@ -506,14 +510,42 @@ namespace IotedgeV2CSVFileReceiver
 
                     rownum = cnt;
                 }
-                var recordInfo = new JsonMessage.RecordInfo() { RecordHeader = new List<string>(), RecordData = record };
-                recordInfo.RecordHeader.AddRange(recordsData.HeaderRecords);
-                recordInfo.RecordHeader.Add(cnt.ToString());
+                var recordHeader = info.RecordMetadataEnabled ? new List<string>(recordsData.HeaderRecords) { cnt.ToString() } : null;
+                var recordInfo = new JsonMessage.RecordInfo() { RecordHeader = recordHeader, RecordData = record.Cast<object>().ToList() };
                 jsonMsg.RecordList.Add(recordInfo);
-                if (0 < maxRecords && jsonMsg.RecordList.Count == maxRecords)
+
+                // サイズ見積もりと検証
+                bool shouldSendBySize = false;
+                if (maxMessageSize > 0)
+                {
+                    var recordBytes = JsonMessage.SerializeRecordInfoByte(recordInfo);
+                    long recordSize = recordBytes != null ? recordBytes.Length : 0;
+                    estimatedSize += recordSize + 1; // +1 for comma separator
+
+                    if (estimatedSize >= (long)(messageSizeLimit * SIZE_CHECK_THRESHOLD))
+                    {
+                        var actualBytes = JsonMessage.SerializeJsonMessageByte(jsonMsg);
+                        long actualSize = actualBytes != null ? actualBytes.Length : 0;
+                        if (actualSize + propertyOverhead > messageSizeLimit)
+                        {
+                            if (jsonMsg.RecordList.Count == 1)  
+                            {  
+                                var errmsg = $"Single record exceeds message size limit ({actualSize + propertyOverhead} bytes > {messageSizeLimit} bytes). line:{cnt}";  
+                                MyLogger.WriteLog(ILogger.LogLevel.ERROR, errmsg);  
+                                throw new Exception(errmsg);  
+                            }
+                            // 最後のレコードを次バッチに回す
+                            jsonMsg.RecordList.RemoveAt(jsonMsg.RecordList.Count - 1);
+                            shouldSendBySize = true;
+                        }
+                    }
+                }
+
+                if ((0 < maxRecords && jsonMsg.RecordList.Count == maxRecords) || shouldSendBySize)
                 {
                     using (var msg = MessageFactory.CreateMessage(jsonMsg, filename, rownum, rowtotal, dataProps, filenameProps))
                     {
+                        if (headerRowProperty != null) msg.SetProperty("columns", headerRowProperty);
                         var msgSize = msg.GetBodyStream().Length;
                         MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"message size:{msgSize}");
                         IApplicationEngine appEngine = ApplicationEngineFactory.GetEngine();
@@ -526,13 +558,36 @@ namespace IotedgeV2CSVFileReceiver
                     // 送信するJsonMessageリストを初期化
                     jsonMsg.RecordList.Clear();
                     jsonMsg.RecordList = new List<JsonMessage.RecordInfo>();
+                    estimatedSize = JSON_OVERHEAD + propertyOverhead;
                     rownum = 0;
+
+                    // サイズ超過で次バッチに回したレコードを再追加
+                    if (shouldSendBySize)
+                    {
+                        dataProps = new Dictionary<string, string>();
+                        foreach (var dataProperty in info.DataProperties)
+                        {
+                            if (dataProperty.Get_From == GetFrom.File)
+                            {
+                                dataProps.Add(dataProperty.Name, firstDataProp[dataProperty.Name]);
+                            }
+                            else
+                            {
+                                dataProps.Add(dataProperty.Name, record[dataProperty.Column - 1]);
+                            }
+                        }
+                        rownum = cnt;
+                        jsonMsg.RecordList.Add(recordInfo);
+                        var readdedBytes = JsonMessage.SerializeRecordInfoByte(recordInfo);
+                        estimatedSize += (readdedBytes != null ? readdedBytes.Length : 0) + 1;
+                    }
                 }
             }
             if (jsonMsg.RecordList.Any())
             {
                 using (var msg = MessageFactory.CreateMessage(jsonMsg, filename, rownum, rowtotal, dataProps, filenameProps))
                 {
+                    if (headerRowProperty != null) msg.SetProperty("columns", headerRowProperty);
                     var msgSize = msg.GetBodyStream().Length;
                     MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"message size:{msgSize}");
                     IApplicationEngine appEngine = ApplicationEngineFactory.GetEngine();
@@ -553,6 +608,7 @@ namespace IotedgeV2CSVFileReceiver
                     eof.SetProperty("row_total", rowtotal.ToString("D"));
                     eof.SetProperties(firstDataProp);
                     eof.SetProperties(filenameProps);
+                    if (headerRowProperty != null) eof.SetProperty("columns", headerRowProperty);
 
                     IApplicationEngine appEngine = ApplicationEngineFactory.GetEngine();
                     await appEngine.SendMessageAsync(info.OutputName, eof);
@@ -570,7 +626,45 @@ namespace IotedgeV2CSVFileReceiver
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: SendMessageAsync");
         }
 
-        /// SearchInputFileAsyncから呼び出しのみ、Set/Unset不要
+        /// <summary>
+        /// メッセージプロパティのオーバーヘッド（UTF-8バイト長）を見積もる
+        /// </summary>
+        static long EstimatePropertyOverhead(string filename, int rowtotal, Dictionary<string, string> dataProps, Dictionary<string, string> filenameProps, string headerRowProperty)
+        {
+            long overhead = 0;
+            // 固定プロパティ: filename, row_number, row_total
+            overhead += Encoding.UTF8.GetByteCount("filename") + Encoding.UTF8.GetByteCount(filename);
+            overhead += Encoding.UTF8.GetByteCount("row_number") + Encoding.UTF8.GetByteCount(rowtotal.ToString("D")); // row_numberの最大桁数 ≒ rowtotal桁数
+            overhead += Encoding.UTF8.GetByteCount("row_total") + Encoding.UTF8.GetByteCount(rowtotal.ToString("D"));
+
+            // data_property
+            if (dataProps != null)
+            {
+                foreach (var kv in dataProps)
+                {
+                    overhead += Encoding.UTF8.GetByteCount(kv.Key) + Encoding.UTF8.GetByteCount(kv.Value ?? string.Empty);
+                }
+            }
+
+            // filename_properties
+            if (filenameProps != null)
+            {
+                foreach (var kv in filenameProps)
+                {
+                    overhead += Encoding.UTF8.GetByteCount(kv.Key) + Encoding.UTF8.GetByteCount(kv.Value ?? string.Empty);
+                }
+            }
+
+            // columns property
+            if (headerRowProperty != null)
+            {
+                overhead += Encoding.UTF8.GetByteCount("columns") + Encoding.UTF8.GetByteCount(headerRowProperty);
+            }
+
+            return overhead;
+        }
+
+        /// MyWatcher_OnFileDetectedから呼び出しのみ、Set/Unset不要
         static async Task DeleteFileAsync(FileInfo file)
         {
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: DeleteFileAsync");
@@ -609,7 +703,7 @@ namespace IotedgeV2CSVFileReceiver
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: DeleteFileAsync");
         }
 
-        /// SearchInputFileAsyncから呼び出しのみ、Set/Unset不要
+        /// MyWatcher_OnFileDetectedから呼び出しのみ、Set/Unset不要
         static async Task MoveFileAsync(FileInfo file, string DestPath)
         {
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: MoveFileAsync");
@@ -662,7 +756,7 @@ namespace IotedgeV2CSVFileReceiver
         /// </summary>
         /// <param name="errOutputName"></param>
         /// <returns></returns>
-        /// SearchInputFileAsyncから呼び出しのみ、Set/Unset不要
+        /// MyWatcher_OnFileDetectedから呼び出しのみ、Set/Unset不要
         private static async Task ErrorSendEventAsync(string errOutputName, string fileName)
         {
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: ErrorSendEventAsync");
@@ -694,7 +788,7 @@ namespace IotedgeV2CSVFileReceiver
         /// WaitTimeで指定した時間待機する
         /// </summary>
         /// <returns></returns>
-        /// MyWatcher_OnFileDetectedから呼び出しのみ、Set/Unset不要
+        /// SendMessageAsyncおよびErrorSendEventAsyncから呼び出しのみ、Set/Unset不要
         private static async Task WaitAfterSendAsync()
         {
             MyLogger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: WaitAfterSendAsync");
