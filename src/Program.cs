@@ -1,22 +1,22 @@
 namespace IotedgeV2CSVFileReceiver
 {
     using TICO.GAUDI.Commons;
+    using System.Threading.Tasks;
 
     internal class Program
     {
         static ILogger MyLogger { get; } = LoggerFactory.GetLogger(typeof(Program));
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             MyLogger.WriteLog(ILogger.LogLevel.INFO, $"Start Main");
 
-            using( IApplicationMain appMain = new MyApplicationMain())
+            await using (var appMain = new MyApplicationMain())
             {
-                using (IApplicationEngine appEngine = ApplicationEngineFactory.GetEngine() )
+                await using (var appEngine = ApplicationEngineFactory.GetEngine())
                 {
                     appEngine.SetApplication(appMain);
-
-                    appEngine.RunAsync().Wait();
+                    await appEngine.RunAsync().ConfigureAwait(false);
                 }
             }
 

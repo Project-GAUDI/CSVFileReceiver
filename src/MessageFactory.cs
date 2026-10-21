@@ -1,4 +1,6 @@
 using CsvHelper;
+using CsvHelper.Configuration;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -34,11 +36,12 @@ namespace IotedgeV2CSVFileReceiver
                     logger.WriteLog(ILogger.LogLevel.TRACE, $"GetCsvRecords:'{file.Name}'");
                     lines = new List<List<string>>();
                     using (var reader = new StreamReader(file.FullName, Encoding.GetEncoding(info.Encode)))
-                    using (var csv = new CsvReader(reader, new CultureInfo(info.Culture, false)))
+                    using (var csv = new CsvReader(reader, new CsvConfiguration(new CultureInfo(info.Culture, false))
                     {
-                        csv.Configuration.HasHeaderRecord = false;
-                        csv.Configuration.Delimiter = info.Delimiter.ToString();
-
+                        HasHeaderRecord = false,
+                        Delimiter = info.Delimiter.ToString()
+                    }))
+                    {
                         while (csv.Read())
                         {
                             var row = new List<string>();
@@ -129,42 +132,26 @@ namespace IotedgeV2CSVFileReceiver
             logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: GetRecordDataFromCsvData");
 
             var recordData = new RecordData();
-            int dataCnt = 0;
-            var samplingTime = info.SamplingBaseTime;
-
-            logger.WriteLog(ILogger.LogLevel.TRACE, $"ignore_first_row: {info.IgnoreFirstRow}");
             foreach (var line in lines.Select((data, index) => new { data, index }))
             {
-                if (line.index <= info.HeaderEndLine - 1)
+                int lineNumber = line.index + 1; // 1-based line number
+
+                // ヘッダー送信用: HeaderStartLine〜HeaderEndLine
+                if (info.SendHeaderEnabled && lineNumber >= info.HeaderStartLine && lineNumber <= info.HeaderEndLine)
                 {
-                    if (line.index < info.HeaderStartLine - 1 || (info.FileType.Equals(FileType.Standard) && !info.SendHeaderEnabled))
-                    {
-                        logger.WriteLog(ILogger.LogLevel.TRACE, "skip header");
-                        continue;
-                    }
-                    if (info.FileType.Equals(FileType.Standard))
-                    {
-                        recordData.HeaderRecordsStandard.Add(line.data);
-                        logger.WriteLog(ILogger.LogLevel.TRACE, $"header_standard record: [{String.Join(",",line.data)}]");
-                    }
-                    else if (info.FileType.Equals(FileType.AAA) && info.HeaderFilter != null)
-                    {
-                        var createdMessageHeader = CreateMessageHeader(line.data, info.HeaderFilter, logger);
-                        recordData.HeaderRecords.AddRange(createdMessageHeader);
-                        logger.WriteLog(ILogger.LogLevel.TRACE, $"header record: [{String.Join(",",createdMessageHeader)}]");
-                    }
-                    else
-                    {
-                        logger.WriteLog(ILogger.LogLevel.TRACE, $"header record row {line.index}");
-                        recordData.HeaderRecords.AddRange(line.data);
-                        logger.WriteLog(ILogger.LogLevel.TRACE, $"header record: [{String.Join(",",line.data)}]");
-                    }
+                    recordData.HeaderRecordsStandard.Add(line.data);
+                    logger.WriteLog(ILogger.LogLevel.TRACE, $"header_standard record: [{String.Join(",",line.data)}]");
                 }
-                else if (line.index < info.DataStartLine - 1)
+
+                // columns プロパティ用: ColumnsLine
+                if (info.ColumnsLine.HasValue && lineNumber == info.ColumnsLine.Value)
                 {
-                    continue;
+                    recordData.ColumnsRecord = line.data;
+                    logger.WriteLog(ILogger.LogLevel.TRACE, $"columns record: [{String.Join(",",line.data)}]");
                 }
-                else
+
+                // データ部
+                if (lineNumber >= info.DataStartLine)
                 {
                     // データ編集
                     if (info.DataEditOptions != null && info.DataEditOptions.Any())
@@ -174,107 +161,15 @@ namespace IotedgeV2CSVFileReceiver
                             line.data[obj.Column - 1] = obj.GetEditValue(line.data[obj.Column - 1]);
                         }
                     }
-                    // 1列目の削除
-                    if (info.IgnoreFirstRow) line.data.RemoveAt(0);
-
-                    var data = ColumnTrim(line.data);
-                    if (info.FileType.Equals(FileType.AAA))
-                    {
-                        dataCnt++;
-                        if (info.DataInterval != dataCnt)
-                        {
-                            continue;
-                        }
-                        if (info.DataConbine)
-                        {
-                            if (data.Last().Length == 0) data.RemoveAt(data.Count - 1);
-                            if (data.Any())
-                            {
-                                if (recordData.DataRecords.Any())
-                                {
-                                    recordData.DataRecords.First().AddRange(data);
-                                }
-                                else
-                                {
-                                    recordData.DataRecords.Add(data);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            recordData.DataRecords.Add(data);
-                        }
-                        dataCnt = 0;
-                    }
-                    else if (info.FileType.Equals(FileType.ProductDevelopment))
-                    {
-                        if (0 >= info.SamplingInterval)
-                        {
-                            if (recordData.DataRecords.Any())
-                            {
-                                recordData.DataRecords.First().AddRange(data);
-                            }
-                            else
-                            {
-                                recordData.DataRecords.Add(data);
-                            }
-                        }
-                        else
-                        {
-                            data.Insert(0, samplingTime.ToString());
-                            recordData.DataRecords.Add(data);
-                            samplingTime = samplingTime + info.SamplingInterval;
-                        }
-                    }
-                    else
-                    {
-                        recordData.DataRecords.Add(line.data);
-                    }
+                    recordData.DataRecords.Add(line.data);
                 }
             }
 
-            logger.WriteLog(ILogger.LogLevel.TRACE, $"header_standard_count: {recordData.HeaderRecordsStandard.Count} header_count: {recordData.HeaderRecords.Count} data_count: {recordData.DataRecords.Count}");
+            logger.WriteLog(ILogger.LogLevel.TRACE, $"header_standard_count: {recordData.HeaderRecordsStandard.Count} columns: {(recordData.ColumnsRecord != null ? "yes" : "no")} header_count: {recordData.HeaderRecords.Count} data_count: {recordData.DataRecords.Count}");
             
             logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: GetRecordDataFromCsvData");
 
             return recordData;
-        }
-
-        private static List<string> ColumnTrim(List<string> line)
-        {
-            var ret = line.Select(x => x.Trim()).ToList();
-            return ret;
-        }
-
-        /// <summary>
-        /// メッセージを加工する
-        /// </summary>
-        /// <param name="lines">ファイル読み込み結果</param>
-        /// <returns></returns>
-        private static List<string> CreateMessageHeader(List<string> line, Dictionary<string, string> headerFilter, ILogger logger)
-        {
-            logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: CreateMessageHeader");
-
-            var csvData = new List<string>();
-            // フィルタ条件によるヘッダ情報の置換
-            foreach (var column in line)
-            {
-                var col = column.Trim();
-                string val;
-                if (headerFilter.TryGetValue(col, out val))
-                {
-                    logger.WriteLog(ILogger.LogLevel.TRACE, $"header_filter:{col} -> {val}");
-                    csvData.Add(val);
-                }
-                else
-                {
-                    csvData.Add(col);
-                }
-            }
-
-            logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: CreateMessageHeader");
-
-            return csvData;
         }
 
         public class RecordData
@@ -282,6 +177,18 @@ namespace IotedgeV2CSVFileReceiver
             public List<string> HeaderRecords = new List<string>();
             public List<List<string>> DataRecords = new List<List<string>>();
             public List<List<string>> HeaderRecordsStandard = new List<List<string>>();
+            public List<string> ColumnsRecord = null;
+        }
+
+        /// <summary>
+        /// カラム名レコードからcolumnsプロパティ値(JSON配列)を生成する
+        /// </summary>
+        /// <param name="columnsRecord"></param>
+        /// <returns></returns>
+        public static string CreateHeaderRowPropertyValue(List<string> columnsRecord)
+        {
+            var jsonArray = new JArray(columnsRecord);
+            return jsonArray.ToString(Newtonsoft.Json.Formatting.None);
         }
     }
 }

@@ -11,66 +11,51 @@ namespace IotedgeV2CSVFileReceiver
         static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(DataEditOption));
         public int Column { get; private set; }
 
-        public string Mode
-        {
-            get
-            {
-                return this.GetType().ToString();
-            }
-        }
-
         public static DataEditOption CreateInstance(JObject jobj)
         {
             _logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: CreateInstance");
-            int column = Util.GetRequiredValue<int>(jobj, "column");
-            if (column < 1)
+            try
             {
-                var errmsg = $"column can't set {column}";
-                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
-                throw new Exception(errmsg);
-            }
+                int column = Util.GetDesiredProperty<int>(jobj, "column", true, condition: (value) => value >= 1);
+                string mode = Util.GetDesiredProperty<string>(jobj, "mode", true);
+                mode = mode.ToLower();
 
-            string mode = Util.GetRequiredValue<string>(jobj, "mode");
-            if (string.IsNullOrEmpty(mode))
-            {
-                var errmsg = $"Property 'mode' dose not exist.";
-                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
-                throw new Exception(errmsg);
+                DataEditOption ret;
+                if (mode.Equals("round"))
+                {
+                    ret = new DataEditOptionRound(jobj);
+                }
+                else if (mode.Equals("floor"))
+                {
+                    ret = new DataEditOptionFloor(jobj);
+                }
+                else if (mode.Equals("truncate"))
+                {
+                    ret = new DataEditOptionTruncate(jobj);
+                }
+                else if (mode.Equals("ceiling"))
+                {
+                    ret = new DataEditOptionCeiling(jobj);
+                }
+                else if (mode.Equals("substring"))
+                {
+                    ret = new DataEditOptionSubstring(jobj);
+                }
+                else
+                {
+                    var errmsg = $"mode:{mode} is not supported.";
+                    _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
+                    throw new Exception(errmsg);
+                }
+                ret.Column = column;
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: CreateInstance");
+                return ret;
             }
-
-            mode = mode.ToLower();
-
-            DataEditOption ret;
-            if (mode.Equals("round"))
+            catch (Exception ex)
             {
-                ret = new DataEditOptionRound(jobj);
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {ex.Message}");
+                throw;
             }
-            else if (mode.Equals("floor"))
-            {
-                ret = new DataEditOptionFloor(jobj);
-            }
-            else if (mode.Equals("truncate"))
-            {
-                ret = new DataEditOptionTruncate(jobj);
-            }
-            else if (mode.Equals("ceiling"))
-            {
-                ret = new DataEditOptionCeiling(jobj);
-            }
-            else if (mode.Equals("substring"))
-            {
-                ret = new DataEditOptionSubstring(jobj);
-            }
-            else
-            {
-                var errmsg = $"mode:{mode} is not supported.";
-                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: CreateInstance caused by {errmsg}");
-                throw new Exception(errmsg);
-            }
-
-            ret.Column = column;
-            _logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: CreateInstance");
-            return ret;
         }
 
         public abstract string GetEditValue(string input);
@@ -87,20 +72,15 @@ namespace IotedgeV2CSVFileReceiver
         public DataEditOptionFloatRounding(JObject jobj)
         {
             _logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: DataEditOptionFloatRounding");
-            Digits = Util.GetRequiredValue<int>(jobj, "digits");
-            if (Digits < 0)
+            try
             {
-                var errmsg = $"digits can't set {Digits}";
-                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: DataEditOptionFloatRounding caused by {errmsg}");
-                throw new Exception(errmsg);
+                Digits = Util.GetDesiredProperty<int>(jobj, "digits", true);
+                OutputFormat = Util.GetDesiredProperty<string>(jobj, "output_format", true);
             }
-
-            OutputFormat = Util.GetRequiredValue<string>(jobj, "output_format");
-            if (string.IsNullOrEmpty(OutputFormat))
+            catch (Exception ex)
             {
-                var errmsg = $"Property 'output_format' dose not exist.";
-                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: DataEditOptionFloatRounding caused by {errmsg}");
-                throw new Exception(errmsg);
+                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: DataEditOptionFloatRounding caused by {ex.Message}");
+                throw;
             }
             _logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: DataEditOptionFloatRounding");
         }
@@ -109,8 +89,6 @@ namespace IotedgeV2CSVFileReceiver
     class DataEditOptionRound : DataEditOptionFloatRounding
     {
         public DataEditOptionRound(JObject jobj) : base(jobj) { }
-        static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(DataEditOptionRound));
-
         public override string GetEditValue(string input)
         {
             decimal d1 = decimal.Parse(input, System.Globalization.NumberStyles.Float);
@@ -122,8 +100,6 @@ namespace IotedgeV2CSVFileReceiver
     class DataEditOptionFloor : DataEditOptionFloatRounding
     {
         public DataEditOptionFloor(JObject jobj) : base(jobj) { }
-        static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(DataEditOptionFloor));
-
         public override string GetEditValue(string input)
         {
             decimal d1 = decimal.Parse(input, System.Globalization.NumberStyles.Float);
@@ -136,8 +112,6 @@ namespace IotedgeV2CSVFileReceiver
     class DataEditOptionTruncate : DataEditOptionFloatRounding
     {
         public DataEditOptionTruncate(JObject jobj) : base(jobj) { }
-        static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(DataEditOptionTruncate));
-
         public override string GetEditValue(string input)
         {
             decimal d1 = decimal.Parse(input, System.Globalization.NumberStyles.Float);
@@ -150,8 +124,6 @@ namespace IotedgeV2CSVFileReceiver
     class DataEditOptionCeiling : DataEditOptionFloatRounding
     {
         public DataEditOptionCeiling(JObject jobj) : base(jobj) { }
-        static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(DataEditOptionCeiling));
-
         public override string GetEditValue(string input)
         {
             decimal d1 = decimal.Parse(input, System.Globalization.NumberStyles.Float);
@@ -164,7 +136,7 @@ namespace IotedgeV2CSVFileReceiver
     class DataEditOptionSubstring : DataEditOption
     {
         // 元private。シリアライズするためにpublicに変更
-        public int Start_index { get; set; } = -1;
+        public int Start_index { get; set; } = 0;
         // 元private。シリアライズするためにpublicに変更
         public int Length { get; set; } = -1;
         static ILogger _logger { get; } = LoggerFactory.GetLogger(typeof(DataEditOptionSubstring));
@@ -172,25 +144,10 @@ namespace IotedgeV2CSVFileReceiver
         public DataEditOptionSubstring(JObject jobj)
         {
             _logger.WriteLog(ILogger.LogLevel.TRACE, $"Start Method: DataEditOptionSubstring");
-            Start_index = Util.GetRequiredValue<int>(jobj, "startindex");
-            if (Start_index < 0)
-            {
-                var errmsg = $"startindex can't set {Start_index}";
-                _logger.WriteLog(ILogger.LogLevel.TRACE, $"Exit Method: DataEditOptionSubstring caused by {errmsg}");
-                throw new Exception(errmsg);
-            }
 
-            if (jobj.TryGetValue("length", out JToken token1))
-            {
-                string tmpstr = ((JValue)token1).Value.ToString();
-                if (int.TryParse(tmpstr, out int val))
-                {
-                    if (val > 0)
-                    {
-                        Length = val;
-                    }
-                }
-            }
+            Start_index = Util.GetDesiredProperty<int>(jobj, "startindex", true, condition: (value) => value >= 0);
+            Length = Util.GetDesiredProperty<int>(jobj, "length", false, -1, condition: (value) => value >= 0 || value == -1);
+
             _logger.WriteLog(ILogger.LogLevel.TRACE, $"End Method: DataEditOptionSubstring");
         }
 
