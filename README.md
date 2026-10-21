@@ -1,6 +1,7 @@
 # CSVFileReceiver
 
 ## 目次
+
 * [概要](#概要)
 * [機能](#機能)
 * [Quick Start](#quick-start)
@@ -22,8 +23,7 @@
 * [ユースケース](#ユースケース)
   * [ケース ①](#Usecase1)
   * [ケース ②](#Usecase2)
-* [補足資料](#補足資料)
-  * [AAA](#aaa)
+  * [ケース ③](#Usecase3)
 * [Feedback](#feedback)
 * [LICENSE](#license)
 
