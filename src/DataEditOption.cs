@@ -88,11 +88,32 @@ namespace IotedgeV2CSVFileReceiver
 
     class DataEditOptionRound : DataEditOptionFloatRounding
     {
-        public DataEditOptionRound(JObject jobj) : base(jobj) { }
+        public DataEditOptionRound(JObject jobj) : base(jobj)
+        {
+            if (Digits < -28 || Digits > 28)
+            {
+                throw new ArgumentOutOfRangeException(nameof(Digits), "Digits must be between -28 and 28.");
+            }
+        }
+
         public override string GetEditValue(string input)
         {
             decimal d1 = decimal.Parse(input, System.Globalization.NumberStyles.Float);
-            decimal d2 = Math.Round(d1, Digits, MidpointRounding.AwayFromZero);
+            decimal d2;
+            if (Digits >= 0)
+            {
+                d2 = Math.Round(d1, Digits, MidpointRounding.AwayFromZero);
+            }
+            else
+            {
+                decimal factor = 1m;
+                for (int i = 0; i < -Digits; i++)
+                {
+                    factor *= 10m;
+                }
+
+                d2 = Math.Round(d1 / factor, 0, MidpointRounding.AwayFromZero) * factor;
+            }
             return d2.ToString(OutputFormat);
         }
     }
