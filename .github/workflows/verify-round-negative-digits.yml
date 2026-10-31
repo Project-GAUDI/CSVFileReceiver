@@ -1,0 +1,49 @@
+name: Verify negative-digit rounding (fork only)
+
+on:
+  push:
+    branches:
+      - fix/round-negative-digits
+    paths:
+      - 'src/DataEditOption.cs'
+      - 'test/DataEditOptionRoundTest.cs'
+      - '.github/workflows/verify-round-negative-digits.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Configure Project-GAUDI NuGet feed
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dotnet nuget add source \
+            --username "$GH_ACTOR" \
+            --password "$GH_TOKEN" \
+            --store-password-in-clear-text \
+            --name gaudi \
+            "https://nuget.pkg.github.com/Project-GAUDI/index.json"
+
+      - name: Restore
+        run: dotnet restore --verbosity minimal
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release
